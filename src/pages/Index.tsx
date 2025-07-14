@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -53,44 +54,66 @@ const Index = () => {
     setIsLoading(true);
 
     try {
+      console.log('API Key length:', apiKey.length);
+      console.log('API Key starts with:', apiKey.substring(0, 10) + '...');
       console.log('Sending request to Grok API...');
+      
+      const requestBody = {
+        messages: [
+          {
+            role: 'system',
+            content: 'You are Grok, a helpful AI assistant created by xAI. Be helpful, witty, and engaging in your responses.'
+          },
+          ...messages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+          })),
+          {
+            role: 'user',
+            content: currentInput
+          }
+        ],
+        model: 'grok-2-1212',
+        stream: false,
+        temperature: 0.7
+      };
+
+      console.log('Request body:', JSON.stringify(requestBody, null, 2));
+
       const response = await fetch('https://api.x.ai/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${apiKey.trim()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'system',
-              content: 'You are Grok, a helpful AI assistant created by xAI. Be helpful, witty, and engaging in your responses.'
-            },
-            ...messages.map(msg => ({
-              role: msg.role,
-              content: msg.content
-            })),
-            {
-              role: 'user',
-              content: currentInput
-            }
-          ],
-          model: 'grok-2-1212',
-          stream: false,
-          temperature: 0.7
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+      
+      const responseText = await response.text();
+      console.log('Raw response:', responseText);
       
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API Error Response:', errorData);
-        throw new Error(`API request failed: ${response.status} - ${errorData.error || 'Unknown error'}`);
+        let errorMessage = `API request failed: ${response.status}`;
+        try {
+          const errorData = JSON.parse(responseText);
+          console.error('API Error Response:', errorData);
+          errorMessage += ` - ${errorData.error?.message || errorData.error || 'Unknown error'}`;
+        } catch (e) {
+          console.error('Failed to parse error response:', responseText);
+          errorMessage += ` - ${responseText}`;
+        }
+        throw new Error(errorMessage);
       }
 
-      const data = await response.json();
-      console.log('API Response:', data);
+      const data = JSON.parse(responseText);
+      console.log('Parsed API Response:', data);
+      
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error('Invalid response format from API');
+      }
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -102,7 +125,7 @@ const Index = () => {
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Error calling Grok API:', error);
-      toast.error("Failed to get response from Grok. Please check your API key and try again.");
+      toast.error(`Failed to get response from Grok: ${error.message || 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
