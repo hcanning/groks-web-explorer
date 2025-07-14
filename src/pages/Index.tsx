@@ -149,7 +149,7 @@ const Index = () => {
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-bold text-white flex items-center justify-center gap-2">
               <Bot className="w-8 h-8 text-purple-400" />
-              Grok Chat
+              HCANN :: Grok Chat
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
