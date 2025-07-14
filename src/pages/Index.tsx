@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -49,10 +48,12 @@ const Index = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = inputValue;
     setInputValue('');
     setIsLoading(true);
 
     try {
+      console.log('Sending request to Grok API...');
       const response = await fetch('https://api.x.ai/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -71,20 +72,26 @@ const Index = () => {
             })),
             {
               role: 'user',
-              content: inputValue
+              content: currentInput
             }
           ],
-          model: 'grok-beta',
+          model: 'grok-2-1212',
           stream: false,
           temperature: 0.7
         }),
       });
 
+      console.log('Response status:', response.status);
+      
       if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
+        const errorData = await response.json();
+        console.error('API Error Response:', errorData);
+        throw new Error(`API request failed: ${response.status} - ${errorData.error || 'Unknown error'}`);
       }
 
       const data = await response.json();
+      console.log('API Response:', data);
+      
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: data.choices[0].message.content,
