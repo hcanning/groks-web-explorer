@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Message {
   id: string;
@@ -17,8 +18,6 @@ const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKeyInput, setShowApiKeyInput] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -28,15 +27,6 @@ const Index = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  const handleApiKeySubmit = () => {
-    if (apiKey.trim()) {
-      setShowApiKeyInput(false);
-      toast.success("API key saved! You can now start chatting with Grok.");
-    } else {
-      toast.error("Please enter a valid API key");
-    }
-  };
 
   const sendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
@@ -54,70 +44,40 @@ const Index = () => {
     setIsLoading(true);
 
     try {
-      console.log('API Key length:', apiKey.length);
-      console.log('API Key starts with:', apiKey.substring(0, 10) + '...');
-      console.log('Sending request to Grok API...');
+      console.log('Sending message to Grok via Edge Function...');
       
-      const requestBody = {
-        messages: [
-          {
-            role: 'system',
-            content: 'You are Grok, a helpful AI assistant created by xAI. Be helpful, witty, and engaging in your responses.'
-          },
-          ...messages.map(msg => ({
-            role: msg.role,
-            content: msg.content
-          })),
-          {
-            role: 'user',
-            content: currentInput
-          }
-        ],
-        model: 'grok-2-1212',
-        stream: false,
-        temperature: 0.7
-      };
+      // Prepare messages for the API
+      const apiMessages = [
+        ...messages.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        })),
+        {
+          role: 'user',
+          content: currentInput
+        }
+      ];
 
-      console.log('Request body:', JSON.stringify(requestBody, null, 2));
-
-      const response = await fetch('https://api.x.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey.trim()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+      const { data, error } = await supabase.functions.invoke('chat-with-grok', {
+        body: { messages: apiMessages }
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-      
-      const responseText = await response.text();
-      console.log('Raw response:', responseText);
-      
-      if (!response.ok) {
-        let errorMessage = `API request failed: ${response.status}`;
-        try {
-          const errorData = JSON.parse(responseText);
-          console.error('API Error Response:', errorData);
-          errorMessage += ` - ${errorData.error?.message || errorData.error || 'Unknown error'}`;
-        } catch (e) {
-          console.error('Failed to parse error response:', responseText);
-          errorMessage += ` - ${responseText}`;
-        }
-        throw new Error(errorMessage);
+      if (error) {
+        console.error('Edge Function Error:', error);
+        throw new Error(error.message || 'Failed to get response from Grok');
       }
 
-      const data = JSON.parse(responseText);
-      console.log('Parsed API Response:', data);
-      
-      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        throw new Error('Invalid response format from API');
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      if (!data?.content) {
+        throw new Error('No content received from Grok');
       }
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: data.choices[0].message.content,
+        content: data.content,
         role: 'assistant',
         timestamp: new Date()
       };
@@ -134,68 +94,19 @@ const Index = () => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (showApiKeyInput) {
-        handleApiKeySubmit();
-      } else {
-        sendMessage();
-      }
+      sendMessage();
     }
   };
-
-  if (showApiKeyInput) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md bg-white/10 backdrop-blur-lg border-white/20">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl font-bold text-white flex items-center justify-center gap-2">
-              <Bot className="w-8 h-8 text-purple-400" />
-              HCANN :: Grok Chat
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-white/80 text-sm text-center">
-              Enter your Grok API key to start chatting
-            </p>
-            <Input
-              type="password"
-              placeholder="Enter your Grok API key..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              onKeyPress={handleKeyPress}
-              className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
-            />
-            <Button 
-              onClick={handleApiKeySubmit}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-            >
-              Start Chatting
-            </Button>
-            <p className="text-xs text-white/60 text-center">
-              Your API key is stored locally and never sent to our servers
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col">
       {/* Header */}
       <div className="bg-black/20 backdrop-blur-lg border-b border-white/10 p-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-4xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3">
             <Bot className="w-8 h-8 text-purple-400" />
-            <h1 className="text-2xl font-bold text-white">Grok Chat</h1>
+            <h1 className="text-2xl font-bold text-white">HCANN :: Grok Chat</h1>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowApiKeyInput(true)}
-            className="border-white/20 text-white hover:bg-white/10"
-          >
-            Change API Key
-          </Button>
         </div>
       </div>
 
